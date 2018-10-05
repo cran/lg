@@ -2,9 +2,10 @@
 # Functions for plotting the local correlations
 # ---------------------------------------------
 
-#' Plot unconditional local correlation maps
+#' Plot local correlation maps
 #'
-#' Plot the estimated local correlation map for a pair of variables
+#' Plot the estimated local correlation map (or local \emph{partial} correlation
+#' map) for a pair of variables
 #'
 #' This function plots a map of estimated local Gaussian correlations of a
 #' specified pair (defaults to the first pair) of variables as produced by the
@@ -12,7 +13,9 @@
 #' produced by the 'localgauss'-package by Berentsen et. al (2014), but it is
 #' here more easily customized and specially adapted to the ecosystem within the
 #' \code{lg}-package. The plotting is carried out using the ggplot2-package
-#' (Wickham, 2009).
+#' (Wickham, 2009). This function now also accepts objects created by the
+#' \code{partial_cor()}-function, in order to create local \emph{partial}
+#' correlation maps.
 #'
 #' @param dlg_object The density estimation object produced by the dlg-function
 #' @param pair Integer indicating which pair of variables you want to plot. The
@@ -90,16 +93,30 @@ corplot <- function(dlg_object,
                     subtitle = NULL) {
 
     # First, we chack that the supplied dlg_object actually comes from the
-    # dlg-function:
-    if(class(dlg_object) != "dlg") {
-        stop("dlg_object needs to have class 'dlg'")
+    # dlg- or partial_cor function:
+    if(!(class(dlg_object) %in% c("dlg", "partial"))) {
+        stop("dlg_object needs to have class 'dlg' or 'partial'")
+    }
+
+    # If the object is 'partial', then we need to put the partial correlations
+    # into a loc_cor-position in order to use the same code below as for the
+    # ordinary local correlations.
+    if(class(dlg_object) == "partial") {
+      dlg_object$loc_cor <- matrix(dlg_object$partial_correlations, ncol = 1)
+
     }
 
     # We also check that the pair number is actually a pair in this model
-    if(!(pair %in% 1:nrow(dlg_object$bw$joint))) {
-      stop(paste("'pair' must be an integer between 1 and ",
-                 nrow(dlg_object$bw$joint),
-                 " (the number of pairs in the model"))
+    if(class(dlg_object) == "dlg") {
+      if(!(pair %in% 1:nrow(dlg_object$bw$joint))) {
+        stop(paste("'pair' must be an integer between 1 and ",
+                   nrow(dlg_object$bw$joint),
+                   " (the number of pairs in the model"))
+      }
+    } else {
+      if(pair != 1) {
+        stop("When plotting partial correlations, the 'pair'-parameter must be equal to 1.")
+      }
     }
 
     # Next, we construct the data frame that contains the local correlations.
@@ -107,12 +124,13 @@ corplot <- function(dlg_object,
     # because the pairwise local correlation will only depend on the pairwise
     # grid points.
     if(gaussian_scale) {
-        full_grid <-
-          dlg_object$transformed_grid[, unlist(dlg_object$bw$joint[pair, c(1, 2)])]
+      full_grid <-
+        dlg_object$transformed_grid[, unlist(dlg_object$bw$joint[pair, c(1, 2)])]
     } else {
-        full_grid <-
-          dlg_object$grid[, unlist(dlg_object$bw$joint[pair, c(1, 2)])]
+      full_grid <-
+        dlg_object$grid[, unlist(dlg_object$bw$joint[pair, c(1, 2)])]
     }
+
 
     # Where do we find unique values in the pairwise grid?
     distinct_grid <- !duplicated(full_grid, MARG = 1)
@@ -202,13 +220,23 @@ corplot <- function(dlg_object,
     }
 
     if(is.null(main)) {
-        main_label <- paste("Local correlations for pair ",
-                             pair,
-                             " (variables ",
-                             dlg_object$bw$joint[pair, 1],
-                             " and ",
-                             dlg_object$bw$joint[pair, 2],
-                             ")", sep = "")
+        if(class(dlg_object) == "dlg") {
+          main_label <- paste("Local correlations for pair ",
+                              pair,
+                              " (variables ",
+                              dlg_object$bw$joint[pair, 1],
+                              " and ",
+                              dlg_object$bw$joint[pair, 2],
+                              ")", sep = "")
+        } else {
+          main_label <- paste("Local partial correlations for pair ",
+                              pair,
+                              " (variables ",
+                              dlg_object$bw$joint[pair, 1],
+                              " and ",
+                              dlg_object$bw$joint[pair, 2],
+                              ")", sep = "")
+        }
     } else {
       main_label <- main
     }
@@ -237,7 +265,6 @@ corplot <- function(dlg_object,
                                     size = point_size)
       }
     }
-
 
     # Add the labels, if requested
     if(plot_labels) {

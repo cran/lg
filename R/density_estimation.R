@@ -386,18 +386,23 @@ dlg_marginal_wrapper <- function(data_matrix, eval_matrix, bw_vector){
 
 #' The locally Gaussian density estimator (LGDE)
 #'
-#' Estimate a multivariate density function using locally Gaussian approximations
+#' Estimate a multivariate density function using locally Gaussian
+#' approximations
 #'
 #' This function does multivariate density estimation using the locally Gaussian
 #' density estimator (LGDE), that was introduced by Otneim & Tjøstheim (2017).
 #' The function takes as arguments an \code{lg}-object as produced by the main
-#' \code{lg_main}-function (where all the running parameters are specified), and a
-#' grid of points where the density estimate should be estimated.
+#' \code{lg_main}-function (where all the running parameters are specified), and
+#' a grid of points where the density estimate should be estimated.
 #'
 #' @param lg_object An object of type \code{lg}, as produced by the
 #'   \code{lg_main}-function.
 #' @param grid A matrix of grid points, where we want to evaluate the density
 #'   estimate.
+#' @param level Specify a level if asymptotic standard deviations and confidence
+#'   intervals should be returned.
+#' @param normalization_points How many grid points for approximating the integral
+#'   of the density estimate, to use for normalization?
 #'
 #' @return A list containing the density estimate as well as all the running
 #'   parameters that has been used. The elements are:
@@ -405,18 +410,18 @@ dlg_marginal_wrapper <- function(data_matrix, eval_matrix, bw_vector){
 #'   \itemize{
 #'     \item \code{f_est}: The estimated multivariate density.
 #'     \item \code{loc_mean}: The estimated local means if \code{est_method}
-#'           is "5par" or "5par_marginals_fixed", a matrix of zeros if
-#'           \code{est_method} is "1par".
+#'            is "5par" or "5par_marginals_fixed", a matrix of zeros if
+#'            \code{est_method} is "1par".
 #'     \item \code{loc_sd}: The estimated local st. deviations if
 #'           \code{est_method} is "5par" or "5par_marginals_fixed", a matrix
-#'            of ones if \code{est_method} is "1par".
-#'     \item \code{loc_cor}: Matrix of estimated local correlations, one column
-#'           for each pair of variables, in the same order as specified in the
-#'           bandwidth object.
+#'           of ones if \code{est_method} is "1par".
+#'     \item \code{loc_cor}: Matrix of estimated local correlations, one
+#'           column for each pair of variables, in the same order as specified
+#'           in the bandwidth object.
 #'     \item \code{x}: The data set.
 #'     \item \code{bw}: The bandwidth object.
 #'     \item \code{transformed_data}: The data transformed to approximate
-#'           marginal standard normality.
+#'            marginal standard normality.
 #'     \item \code{normalizing_constants}: The normalizing constants used to
 #'           transform data and grid back and forth to the marginal standard
 #'           normality scale, as seen in eq. (8) of Otneim & Tjøstheim (2017).
@@ -424,7 +429,21 @@ dlg_marginal_wrapper <- function(data_matrix, eval_matrix, bw_vector){
 #'           original scale.
 #'     \item \code{transformed_grid}: The grid where the estimation was
 #'           performed, on the marginal standard normal scale.
-#'  }
+#'     \item \code{normalization_points} Number of grid points used
+#'           to approximate the integral of the density estimate, in order to
+#'           normalize?
+#'     \item \code{normalization_constant} If approximated, the integral of the
+#'           non-normalized density estimate. NA if not normalized.
+#'     \item \code{density_normalized} Logical, indicates whether the final
+#'           density estimate (contained in f_est) has been approximately
+#'           normalized to have unit integral.
+#'     \item \code{loc_cor_sd} Estimated asymptotic standard deviation for the
+#'           local correlations.
+#'     \item \code{loc_cor_lower} Lower confidence limit based on the asymptotic
+#'           standard deviation.
+#'     \item \code{loc_cor_upper} Upper confidence limit based on the asymptotic
+#'           standard deviation.
+#'    }
 #'
 #' @examples
 #'    x <- cbind(rnorm(100), rnorm(100), rnorm(100))
@@ -434,11 +453,11 @@ dlg_marginal_wrapper <- function(data_matrix, eval_matrix, bw_vector){
 #'
 #' @references
 #'
-#'    Otneim, Håkon, and Dag Tjøstheim. "The locally gaussian density estimator for
-#'    multivariate data." Statistics and Computing 27, no. 6 (2017): 1595-1616.
+#' Otneim, Håkon, and Dag Tjøstheim. "The locally gaussian density estimator for
+#' multivariate data." Statistics and Computing 27, no. 6 (2017): 1595-1616.
 #'
 #' @export
-dlg <- function(lg_object, grid = NULL) {
+dlg <- function(lg_object, grid = NULL, level = 0.95, normalization_points = NULL) {
 
     # Do some checks first
     check_lg(lg_object)
@@ -448,9 +467,27 @@ dlg <- function(lg_object, grid = NULL) {
                            type = "grid")
     }
 
+    if(!is.null(normalization_points)) {
+      if(!is.numeric(normalization_points)) {
+        stop("normalization_points must either be NA (for no normalization) or an integer.")
+      }
+    }
+
     # Sample size and number of variables
     n <- nrow(lg_object$x)
     d <- ncol(lg_object$x)
+
+    # If we are going to normalize the density estimate, we calculate it on a
+    # grid of size normalization_points, that we generate from a multivariate
+    # normal having the same mean and covariance matrix as the original data. We
+    # use this to calculate the integral. This is only temporary, and we will
+    # remove this in the end.
+    if(!is.null(normalization_points)) {
+      extra_grid <- mvtnorm::rmvnorm(n = normalization_points,
+                                     mean = colMeans(x),
+                                     sigma = cov(x))
+      grid <- rbind(grid, extra_grid)
+    }
 
     # Extract the data that we will us in the optimization, transform the grid if needed
     if(lg_object$transform_to_marginal_normality) {
@@ -525,6 +562,33 @@ dlg <- function(lg_object, grid = NULL) {
                          pairs = pairs)*
         apply(normalizing_constants, 1, prod)
 
+    # If we normalize, calculate the constant and remove the extra grid points.
+    # If not, set the normalizing constant equal to one.
+    if(!is.null(normalization_points)) {
+      normalization_grid <- tail(grid, n = normalization_points)
+      normalization_est <- tail(f_est, n = normalization_points)
+      normalization_constant <- mean(normalization_est/
+                                       mvtnorm::dmvnorm(normalization_grid,
+                                                        mean = colMeans(x),
+                                                        sigma = cov(x)))
+
+      # Remove the extra grid points that were added to perform normalization of
+      # the estimated density.
+      grid <- grid[1:(nrow(grid) - normalization_points), ]
+      loc_mean <- loc_mean[1:nrow(grid),]
+      loc_sd <- loc_sd[1:nrow(grid),]
+      loc_cor <- loc_cor[1:nrow(grid), , drop = FALSE]
+      normalizing_constants <- normalizing_constants[1:nrow(grid),]
+      x0 <- x0[1:nrow(grid),]
+
+      f_est <- f_est[1:nrow(grid)]/
+        normalization_constant
+      density_normalized <- TRUE
+    } else {
+      normalization_constant <- NA
+      density_normalized <- FALSE
+    }
+
     # Return
     ret <- list(f_est = f_est,
                 loc_mean = loc_mean,
@@ -535,7 +599,87 @@ dlg <- function(lg_object, grid = NULL) {
                 transformed_data = lg_object$transformed_data,
                 normalizing_constants = normalizing_constants,
                 grid = grid,
-                transformed_grid = x0)
+                transformed_grid = x0,
+                pairs = pairs,
+                normalization_points = normalization_points,
+                normalization_constant = normalization_constant,
+                density_normalized = density_normalized)
+
+    # If the level-argument is provided, we also calculate the standard
+    # deviations based on asymptotic formulas with corresponding confidence
+    # intervals for the local correlations and the density estimates.
+    if(!is.null(level)) {
+
+      # x is the data, or the transformed data. x0 is the grid
+      # where we do estimation, transformed or not.
+
+      # We need to evaluate the density estimate in the observations, and do
+      # that by running the dlg-function.
+      density_object_obs <- dlg(lg_object, grid = lg_object$x, level = NULL)
+
+      # We initialize a matrix for the asymptotic standard deviation for
+      # the local correlations. It will have the same dimension as the matrix of
+      # estimates:
+      loc_cor_sd <- NA*loc_cor
+
+      # We approximate the J- and M integrals by Monte Carlo an d the LLN, using
+      # locally Gaussian estimates in the observations. This has to be done for
+      # each pair of variables.
+      for(i in 1:nrow(pairs)) {
+
+        # We first calculate the J- and M integrals. The result are big
+        # matrices, with one column per grid point.
+        integrand_J <- apply(x0[, unlist(c(pairs[i,]))],
+                             1,
+                             function(t) mvtnorm::dmvnorm(x = (x[, unlist(c(pairs[i,]))] - t),
+                                                          sigma = diag(c(lg_object$bw$joint$bw1[i]^2,
+                                                                         lg_object$bw$joint$bw2[i]^2)))*
+                               u(x[,pairs[i,1]],
+                                 x[,pairs[i,2]],
+                                 c(density_object_obs$loc_cor[,i]))^2)
+
+        integrand_M1 <- apply(x0[, unlist(c(pairs[i,]))],
+                              1,
+                              function(t)
+                                mvtnorm::dmvnorm(x = (x[, unlist(c(pairs[i,]))] - t),
+                                                 sigma = diag(c(lg_object$bw$joint$bw1[i]^2,
+                                                                lg_object$bw$joint$bw2[i]^2)))^2*
+                                u(x[,pairs[i,1]],
+                                  x[,pairs[i,2]],
+                                  c(density_object_obs$loc_cor[,i]))^2)
+
+        integrand_M2 <- apply(x0[, unlist(c(pairs[i,]))],
+                              1,
+                              function(t)
+                                mvtnorm::dmvnorm(x = (x[, unlist(c(pairs[i,]))] - t),
+                                                 sigma = diag(c(lg_object$bw$joint$bw1[i]^2,
+                                                                lg_object$bw$joint$bw2[i]^2)))*
+                                u(x[,pairs[i,1]],
+                                  x[,pairs[i,2]],
+                                  c(density_object_obs$loc_cor[,i])))
+
+        # We approximate the J and the two parts of the M matrices by a Monte
+        # Carlo approximation:
+        J  <- colMeans(integrand_J)
+        M1 <- lg_object$bw$joint$bw1[i] * lg_object$bw$joint$bw2[i] * colMeans(integrand_M1)
+        M2 <- lg_object$bw$joint$bw1[i] * lg_object$bw$joint$bw2[i] * colMeans(integrand_M2)^2
+
+        # The final estimate of the standard deviation will be the the expression below:
+        loc_cor_sd[, i] <- sqrt( (M1 - M2)/(J^2*
+                                              nrow(x)*
+                                              lg_object$bw$joint$bw1[i]*
+                                              lg_object$bw$joint$bw2[i])  )
+      }
+
+      # Calculate the confidence limits based on the asymptotic normality:
+      loc_cor_lower <- loc_cor + qnorm((1 - level)/2) * loc_cor_sd
+      loc_cor_upper <- loc_cor - qnorm((1 - level)/2) * loc_cor_sd
+
+      # Add the asymptotic standard deviations and confidence limits to the list that we return:
+      ret$loc_cor_sd <- loc_cor_sd
+      ret$loc_cor_lower <- loc_cor_lower
+      ret$loc_cor_upper <- loc_cor_upper
+    }
 
     class(ret) <- "dlg"
 
@@ -549,7 +693,7 @@ dlg <- function(lg_object, grid = NULL) {
 #' approximations.
 #'
 #' This function is the conditional version of the locally Gaussian density
-#' estimator (LGDE), described in Otneim & Tjøstheim (2017). The function takes
+#' estimator (LGDE), described in Otneim & Tjøstheim (2018). The function takes
 #' as arguments an \code{lg}-object as produced by the main \code{lg_main}- function,
 #' a grid of points where the density estimate should be estimated, and a set of
 #' conditions.
@@ -569,8 +713,10 @@ dlg <- function(lg_object, grid = NULL) {
 #'   X1.
 #' @param condition A vector with conditions for the variables that we condition
 #'   upon. Length of this vector *must* be the same as the number of variables
-#'   in X2. The function will throw an arrow of there is any discrepancy in the
+#'   in X2. The function will throw an error of there is any discrepancy in the
 #'   dimensions of the \code{grid}, \code{condition} and data set.
+#' @param normalization_points How many grid points for approximating the integral
+#'   of the density estimate, to use for normalization?
 #' @param fixed_grid Not used presently.
 #'
 #' @return A list containing the conditional density estimate as well as all the
@@ -588,11 +734,20 @@ dlg <- function(lg_object, grid = NULL) {
 #'           marginal standard normality (if selected).
 #'     \item \code{normalizing_constants}: The normalizing constants used to
 #'           transform data and grid back and forth to the marginal standard
-#'           normality scale, as seen in eq. (8) of Otneim & Tjøstheim (2017) (if selected).
+#'           normality scale, as seen in eq. (8) of Otneim & Tjøstheim (2017)
+#'           (if selected).
 #'     \item \code{grid}: The grid where the estimation was performed, on the
 #'           original scale.
 #'     \item \code{transformed_grid}: The grid where the estimation was
 #'           performed, on the marginal standard normal scale.
+#'     \item \code{normalization_points} Number of grid points used
+#'           to approximate the integral of the density estimate, in order to
+#'           normalize?
+#'     \item \code{normalization_constant} If approximated, the integral of the
+#'           non-normalized density estimate. NA if not normalized.
+#'     \item \code{density_normalized} Logical, indicates whether the final
+#'           density estimate (contained in f_est) has been approximately
+#'           normalized to have unit integral.
 #'  }
 #'
 #' @examples
@@ -608,14 +763,17 @@ dlg <- function(lg_object, grid = NULL) {
 #' @references
 #'
 #'   Otneim, Håkon, and Dag Tjøstheim. "Conditional density estimation using
-#'   the local Gaussian correlation" Statistics and Computing (2017): 1-19.
+#'   the local Gaussian correlation" Statistics and Computing 28, no. 2 (2018):
+#'   303-321.
 #'
 #' @export
-clg <- function(lg_object, grid = NULL, condition = NULL, fixed_grid = NULL) {
+clg <- function(lg_object, grid = NULL, condition = NULL,
+                normalization_points = NULL, fixed_grid = NULL) {
 
     # Extract some basic info
     n  <- nrow(lg_object$x)        # Sample size
     d  <- ncol(lg_object$x)        # Number of variables
+    x <- lg_object$x
     if(is.null(fixed_grid)) {
         nc <- length(condition)        # Number of conditioning variables
         m  <- nrow(grid)               # Number of grid points
@@ -642,6 +800,22 @@ clg <- function(lg_object, grid = NULL, condition = NULL, fixed_grid = NULL) {
         }
     } else {
         estimation_grid <- fixed_grid
+    }
+
+    # If we are going to normalize the conditional density estimate, we
+    # calculate it on a grid of size normalization_points, that we generate from
+    # a multivariate normal having the same mean and covariance matrix as the
+    # independent variables of the original data. We use this to calculate the
+    # integral. This is only temporary, and we will remove this in the end.
+    if(!is.null(normalization_points)) {
+      extra_grid <- matrix(NA, ncol = d, nrow = normalization_points)
+      extra_grid[, 1:(d-nc)] <- mvtnorm::rmvnorm(n = normalization_points,
+                                     mean = colMeans(x[, 1:(d-nc), drop = FALSE]),
+                                     sigma = cov(x[, 1:(d-nc), drop = FALSE]))
+      for(i in 1:nc) {
+        extra_grid[,d-nc+i] <- rep(condition[i], normalization_points)
+      }
+      estimation_grid <- rbind(estimation_grid, extra_grid)
     }
 
     # Estimate the local correlation in these points using the density function
@@ -707,8 +881,13 @@ clg <- function(lg_object, grid = NULL, condition = NULL, fixed_grid = NULL) {
                     c_cov = c_cov))
     }
 
-    # Apply the f_eval function to all the grid points
-    estimate <- lapply(as.list(1:m), f_eval)
+    if(is.null(normalization_points)) {
+      # Apply the f_eval function to all the grid points
+      estimate <- lapply(as.list(1:m), f_eval)
+    } else {
+      # Apply the f_eval function to all the grid points
+      estimate <- lapply(as.list(1:(m+normalization_points)), f_eval)
+    }
 
     # Extract the conditional density estimates into a vector
     f_est <- unlist(lapply(estimate, "[[", 1))
@@ -717,6 +896,38 @@ clg <- function(lg_object, grid = NULL, condition = NULL, fixed_grid = NULL) {
     c_mean <- lapply(estimate, "[[", 2)
     c_cov  <- lapply(estimate, "[[", 3)
 
+    # If we normalize, calculate the constant and remove the extra grid points.
+    # If not, set the normalizing constant equal to one.
+    if(!is.null(normalization_points)) {
+      normalization_grid <- tail(estimation_grid,
+                                 n = normalization_points)[, 1:(d-nc), drop = FALSE]
+      normalization_est <- tail(f_est, n = normalization_points)
+      normalization_constant <- mean(normalization_est/
+                                       mvtnorm::dmvnorm(normalization_grid,
+                                          mean = colMeans(x[, 1:(d-nc), drop = FALSE]),
+                                          sigma = cov(x[, 1:(d-nc), drop = FALSE])))
+
+      # Remove the extra grid points
+      estimation_grid <-
+        estimation_grid[1:(nrow(estimation_grid) - normalization_points), ]
+
+      c_cov <- c_cov[1:nrow(estimation_grid)]
+      c_mean <- c_mean[1:nrow(estimation_grid)]
+      normalizing_constants <-
+        density_object$normalizing_constants[1:nrow(estimation_grid),]
+      transformed_grid <- density_object$transformed_grid[1:nrow(estimation_grid),]
+
+      f_est <- f_est[1:nrow(grid)]/
+        normalization_constant
+      density_normalized <- TRUE
+    } else {
+      normalization_constant <- NA
+      density_normalized <- FALSE
+      normalizing_constants <-
+        density_object$normalizing_constants
+      transformed_grid <- density_object$transformed_grid
+    }
+
     # Return the result
     ret <- list(f_est = f_est,
                 c_mean = c_mean,
@@ -724,9 +935,13 @@ clg <- function(lg_object, grid = NULL, condition = NULL, fixed_grid = NULL) {
                 x = lg_object$x,
                 bw = lg_object$bw,
                 transformed_data = lg_object$transformed_data,
-                normalizing_constants = density_object$normalizing_constants,
+                normalizing_constants = normalizing_constants,
                 grid = grid,
-                transformed_grid = density_object$transformed_grid)
+                transformed_grid = transformed_grid,
+                density_object = density_object,
+                normalization_points = normalization_points,
+                normalization_constant = normalization_constant,
+                density_normalized = density_normalized)
 
     class(ret) <- "clg"
 
