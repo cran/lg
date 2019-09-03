@@ -223,10 +223,21 @@ replicate_under_ci <- function(lg_object,
     for(i in 1:2) {
 
         # Data without the other variable
+        #
+        # Here we need to make a choice about the estimation method. If we have
+        # trivariate *and* the number of avriables is
+        # only three, it must be set to "1par" here.
+
+        if(lg_object$est_method == "trivariate") {
+          est_method_rep <- "1par"
+        } else {
+          est_method_rep <- lg_object$est_method
+        }
+
         temp_lg_object <-
           suppressMessages(lg_main(x = lg_object$x[,-i],
                                    bw_method = lg_object$bw_method,
-                                   est_method = lg_object$est_method,
+                                   est_method = est_method_rep,
                                    transform_to_marginal_normality = lg_object$transform_to_marginal_normality,
                                    plugin_constant_marginal = lg_object$plugin_constant_marginal,
                                    plugin_constant_joint = lg_object$plugin_constant_joint,
@@ -295,13 +306,15 @@ local_conditional_covariance <- function(clg_object, coord = c(1, 2)) {
 #'   \code{lg_main}-function
 #' @param h The \code{h}-function used in the calculation of the test statistic.
 #'   The default value is \code{h(x) = x^2}.
-ci_test_statistic <- function(lg_object, h = function(x) x^2) {
+#' @param S The integration area in the test statistic. Logical function that
+#'   takes grid points as argument.
+ci_test_statistic <- function(lg_object, h = function(x) x^2, S = function(y) rep(T, nrow(y))) {
 
     # Calculate the conditional coveriance between the first two variables in the data points
     suppressMessages(clg_object <- clg(lg_object, fixed_grid = lg_object$x))
 
     # Extract the conditional covariances and calculate the value of the test statistic
-    mean(h(local_conditional_covariance(clg_object)))
+    mean(h(local_conditional_covariance(clg_object))[S(clg_object$x)])
 }
 
 #' Test for conditional independence
@@ -313,6 +326,8 @@ ci_test_statistic <- function(lg_object, h = function(x) x^2) {
 #'   \code{lg_main}-function
 #' @param h The \code{h}-function used in the calculation of the test statistic.
 #'   The default value is \code{h(x) = x^2}.
+#' @param S The integration area in the test statistic. Logical function that
+#'   takes grid points as argument.
 #' @param n_rep The number of replicated bootstrap samples
 #' @param nodes Either the number of equidistant nodes to generate, or a vector
 #'   of nodes supplied by the user
@@ -327,7 +342,8 @@ ci_test_statistic <- function(lg_object, h = function(x) x^2) {
 #' @param return_time Measure how long the test takes to run, and return along
 #'   with the test result
 #' @export
-ci_test <- function(lg_object, h = function(x) x^2, n_rep = 500, nodes = 100,
+ci_test <- function(lg_object, h = function(x) x^2,
+                    S = function(y) rep(T, nrow(y)), n_rep = 500, nodes = 100,
                     M = NULL, M_sim = 1500, M_corr = 1.5, n_corr = 1.2,
                     extend = .3, return_time = TRUE) {
 
@@ -340,8 +356,8 @@ ci_test <- function(lg_object, h = function(x) x^2, n_rep = 500, nodes = 100,
     replicates <- replicate_under_ci(lg_object, n_rep = n_rep, nodes = nodes, M = M, M_sim = M_sim,
                                      M_corr = M_corr, n_corr = n_corr, extend = extend)
 
-    ## The observed test functional
-    observed <- ci_test_statistic(lg_object, h = h)
+     ## The observed test functional
+    observed <- ci_test_statistic(lg_object, h = h, S = S)
 
     ## Initialize the vector where we want to store the replicated test functionals
     replicated <- rep(NA, n_rep)
@@ -363,7 +379,7 @@ ci_test <- function(lg_object, h = function(x) x^2, n_rep = 500, nodes = 100,
                                 tol_joint = lg_object$tol_joint))
 
         # Then calculate the test statistic
-        replicated[i] <- ci_test_statistic(temp_lg_object, h = h)
+        replicated[i] <- ci_test_statistic(temp_lg_object, h = h, S = S)
 
     }
 
