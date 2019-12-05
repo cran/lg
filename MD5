@@ -1,6 +1,6 @@
-a8b554b95ee47faaa39f404426b4e906 *DESCRIPTION
+6f368782fc1b081ae8ec2f1a476f34b3 *DESCRIPTION
 6909261dd75e2456ec50a68bb17bf9cc *NAMESPACE
-d785fc11066035741abeb67cae95378f *NEWS.md
+e65ff3056da79943ab40c30ab78aaa8a *NEWS.md
 d1edb5af524fc6e7cee8d3c0b314a1a3 *R/bandwidth_selection.R
 2ff1b494ac82485018c8b1f53731dc94 *R/checks.R
 02b695ed24e269489ebdcc664e29dddd *R/contagion.R
@@ -56,7 +56,7 @@ b567f6aea8bb79f7899d77d3fdf35638 *man/mvnorm_eval.Rd
 5363fc68671abc4e79d8699ffd3ba003 *man/u.Rd
 fa5e4d336dcd9634156d79c709b9d3ad *tests/testthat.R
 39ab502d91f58213d277987504c20551 *tests/testthat/test_bandwidth_selection.R
-2adb3762004640e46db73681a533906c *tests/testthat/test_density_estimation.R
+9a917e189f577260cf4af9b74c6c48e1 *tests/testthat/test_density_estimation.R
 8fa1a0cd0141d0bd660c17790aff2ee3 *tests/testthat/test_helping_functions.R
 cce274ec358f39850ab93318f68e97f0 *tests/testthat/test_main_function.R
 9d8a12563b40f61e3a8db17709325eba *tests/testthat/test_partial_correlation.R

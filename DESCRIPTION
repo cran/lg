@@ -1,6 +1,6 @@
 Package: lg
 Title: Locally Gaussian Distributions: Estimation and Methods
-Version: 0.4.0
+Version: 0.4.1
 Authors@R: person("Håkon", "Otneim", email = "hakon.otneim@nhh.no", role = c("aut", "cre"))
 Description: An implementation of locally Gaussian distributions. It provides methods for
     implementing locally Gaussian multivariate density estimation, conditional density 
@@ -14,8 +14,8 @@ RoxygenNote: 6.1.1
 Suggests: testthat
 Imports: mvtnorm, localgauss, logspline, ggplot2, ks, np, tseries
 NeedsCompilation: no
-Packaged: 2019-09-03 10:48:26 UTC; hakon
+Packaged: 2019-12-05 11:05:29 UTC; hakon
 Author: Håkon Otneim [aut, cre]
 Maintainer: Håkon Otneim <hakon.otneim@nhh.no>
 Repository: CRAN
-Date/Publication: 2019-09-03 12:40:02 UTC
+Date/Publication: 2019-12-05 12:40:02 UTC
